@@ -222,6 +222,32 @@ func resourcePipeline() *schema.Resource {
 								validation.StringMatch(regexache.MustCompile(`[0-9A-Za-z_.@-]+`), ""),
 							),
 						},
+						"on_failure": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"result": {
+										Type:             schema.TypeString,
+										Required:         true,
+										ValidateDiagFunc: enum.Validate[types.Result](),
+									},
+									"retry_configuration": {
+										Type:     schema.TypeList,
+										Optional: true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"retry_mode": {
+													Type:             schema.TypeString,
+													Required:         true,
+													ValidateDiagFunc: enum.Validate[types.StageRetryMode](),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -800,6 +826,10 @@ func expandStageDeclaration(tfMap map[string]interface{}) *types.StageDeclaratio
 		apiObject.Name = aws.String(v)
 	}
 
+	if v, ok := tfMap["on_failure"].(map[string]interface{}); ok && len(v) > 0 {
+		apiObject.OnFailure = expandFailureDeclaration(v)
+	}
+
 	return apiObject
 }
 
@@ -1231,6 +1261,38 @@ func expandTriggerDeclarations(tfList []interface{}) []types.PipelineTriggerDecl
 	return apiObjects
 }
 
+func expandFailureDeclaration(tfMap map[string]interface{}) *types.FailureConditions {
+	if tfMap == nil {
+		return nil
+	}
+
+	apiObject := &types.FailureConditions{}
+
+	if v, ok := tfMap["result"].(string); ok && v != "" {
+		apiObject.Result = types.Result(v)
+	}
+
+	if v, ok := tfMap["retry_configuration"].([]interface{}); ok && len(v) > 0 {
+		apiObject.RetryConfiguration = expandRetryConfiguration(v[0].(map[string]interface{}))
+	}
+
+	return apiObject
+}
+
+func expandRetryConfiguration(tfMap map[string]interface{}) *types.RetryConfiguration {
+	if tfMap == nil {
+		return nil
+	}
+
+	apiObject := &types.RetryConfiguration{}
+
+	if v, ok := tfMap["retry_mode"].(string); ok && v != "" {
+		apiObject.RetryMode = types.StageRetryMode(v)
+	}
+
+	return apiObject
+}
+
 func flattenArtifactStore(apiObject *types.ArtifactStore) map[string]interface{} {
 	tfMap := map[string]interface{}{
 		names.AttrType: apiObject.Type,
@@ -1289,6 +1351,10 @@ func flattenStageDeclaration(d *schema.ResourceData, i int, apiObject types.Stag
 
 	if v := apiObject.Name; v != nil {
 		tfMap[names.AttrName] = aws.ToString(v)
+	}
+
+	if v := apiObject.OnFailure; v != nil {
+		tfMap["on_failure"] = flattenFailureDeclaration(v)
 	}
 
 	return tfMap
@@ -1624,4 +1690,36 @@ func flattenTriggerDeclarations(apiObjects []types.PipelineTriggerDeclaration) [
 	}
 
 	return tfList
+}
+
+func flattenFailureDeclaration(apiObject *types.FailureConditions) map[string]interface{} {
+	if apiObject == nil {
+		return nil
+	}
+
+	tfMap := map[string]interface{}{}
+
+	if v := apiObject.Result; v != "" {
+		tfMap["result"] = string(v)
+	}
+
+	if v := apiObject.RetryConfiguration; v != nil {
+		tfMap["retry_configuration"] = []interface{}{flattenRetryConfiguration(v)}
+	}
+
+	return tfMap
+}
+
+func flattenRetryConfiguration(apiObject *types.RetryConfiguration) map[string]interface{} {
+	if apiObject == nil {
+		return nil
+	}
+
+	tfMap := map[string]interface{}{}
+
+	if v := apiObject.RetryMode; v != "" {
+		tfMap["retry_mode"] = string(v)
+	}
+
+	return tfMap
 }
